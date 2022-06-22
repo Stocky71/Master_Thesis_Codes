@@ -8,14 +8,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.style
+import math
 
 matplotlib.style.use("./resources/mpl/paper.mplstyle")
 from matplotlib.font_manager import FontProperties
 import scipy.stats
 
+import pickle as pkl
+
 import data_loader
-#import weighter
-import binning
+import weighter
 import fc
 
 # Load data/MC. By default load_mc loads events at energies >60 TeV, but we want to plot all events.
@@ -24,15 +26,27 @@ mc_filenames = [
     "./resources/data/HESE_mc_flux.json",
     "./resources/data/HESE_mc_truth.json",
 ]
+
 mc = data_loader.load_mc(mc_filenames, emin=10.0e3)
+mc_cos = mc[np.where(mc['recoDepositedEnergy'] >= 60000)]
+cos_z = []
+
 data = data_loader.load_data("./resources/data/HESE_data.json", emin=10.0e3)
+data_cos = data[np.where(data['recoDepositedEnergy'] >= 60000)]
+data_cos_z = []
 
-e_edges, _, _ = binning.get_bins(emin=10.0e3)
-bin_centers = 10.0 ** (0.5 * (np.log10(e_edges[:-1]) + np.log10(e_edges[1:])))
+for i in range(0, len(mc_cos["recoZenith"])):
+    cos_z.append(math.cos(mc_cos["recoZenith"][i]))
 
-n_events, _ = np.histogram(data["recoDepositedEnergy"], bins=e_edges)
+for i in range(0, len(data_cos["recoZenith"])):
+    data_cos_z.append(math.cos(data_cos["recoZenith"][i]))
 
-weight_maker = weighter.Weighter(mc)
+cos_bins = np.linspace(-1.0, 1.0, 11)
+cos_bin_centers = 0.5 * (cos_bins[:-1] + cos_bins[1:])
+n_events_cos, _ = np.histogram(data_cos_z, bins=cos_bins)
+
+
+weight_maker_cos = weighter.Weighter(mc_cos)
 
 parameter_names = [
     "cr_delta_gamma",
@@ -83,7 +97,7 @@ for (zeroed_norm, _) in component_order:
 
 # We want to separate the histogram by components, so we separately get the weights
 # where the all normalization parameters but one are set to zero
-weights = []
+weights_cos = []
 colors = []
 labels = []
 cm = plt.get_cmap("inferno")
@@ -93,59 +107,88 @@ for i, (zeroed_norm, zeroed_label) in enumerate(component_order):
         continue
     p_copy = params_zeroed.copy()
     p_copy[zeroed_norm] = params_dict[zeroed_norm]
-    weights.append(
-        weight_maker.get_weights(livetime, p_copy.keys(), p_copy.values())[0]
+    weights_cos.append(
+        weight_maker_cos.get_weights(livetime, p_copy.keys(), p_copy.values())[0]
     )
     colors.append(color_scale[i])
     labels.append(zeroed_label)
 
-fit, ax = plt.subplots(figsize=(7, 5))
-plt.loglog()
-plt.xlim(10.0e3, 10.0e6)
-plt.ylim(1.0e-1, 4.0e1)
-plt.xlabel("Deposited Energy [GeV]")
+
+#Plot cos histogram
+fit_a, ax_a = plt.subplots(figsize=(7, 5))
+#plt.loglog()
+plt.yscale('log')
+plt.xlim(-1.0, 1.0)
+plt.ylim(1.0e-2, 5.0e2)
+plt.xlabel("cos(z)")
 plt.ylabel("Events per 2635 days")
 
-xerr = [bin_centers - e_edges[:-1], e_edges[1:] - bin_centers]
+
+xerr_cos = [cos_bin_centers - cos_bins[:-1], cos_bins[1:] - cos_bin_centers]
 # The error bars are obtained using fc.py, a function writen by Austin Schneider
 # and found at https://github.com/austinschneider/feldman_cousins/blob/master/fc.py
 one_sigma_proportion = scipy.special.erf(1.0 / np.sqrt(2.0))
-yerr = np.array(
+yerr_cos = np.array(
     [
         (lambda x: [k - x[0], x[1] - k])(
             fc.poisson_interval(k, alpha=one_sigma_proportion)
         )
-        for k in n_events
+        for k in n_events_cos
     ]
 ).T
 
+#Save diag data into file
+cos_error_bar = []
+cos_error_bar.extend(xerr_cos)
+cos_error_bar.extend(yerr_cos())
+cos_error_bar.extend(cos_bin_centers.tolist())
+cos_error_bar.extend(n_events_cos.tolist())
+
+file_name_1 = 'diff_en_data/cos/cos_diag_errorbar.pkl'
+with open(file_name_1, 'wb') as f:
+    pkl.dump(cos_error_bar, f)
+    
+cos_data = []
+cos_data.extend(mc_cos["recoDepositedEnergy"])
+cos_data.extend(weights_cos) #.tolist())
+cos_data.extend(cos_bins.tolist())
+
+file_name_2 = 'diff_en_data/cos/cos_diag_data.pkl'
+with open(file_name_2, 'wb') as f:
+    pkl.dump(cos_data, f)
+
+
+# Plot histogram
 plt.errorbar(
-    bin_centers,
-    n_events,
-    xerr=xerr,
-    yerr=yerr,
+    cos_bin_centers,
+    n_events_cos,
+    xerr=xerr_cos,
+    yerr=yerr_cos,
     color="black",
     marker=None,
     label="Data",
     linestyle="None",
     capsize=3,
     elinewidth=1,
+#    ax=ax_b,
 )
 
 plt.hist(
-    len(weights) * [mc["recoDepositedEnergy"]],
-    weights=weights,
-    bins=e_edges,
+    len(weights_cos) * [cos_z],
+    weights=weights_cos,
+    bins=cos_bins,
     histtype="bar",
     stacked=True,
     label=labels,
     color=colors,
+#	ax=ax_b,
+#	alpha=0.4,
 )
 
 # This applies the visual filter that covers events that are not used
 # in the analysis
 mask_color = "#7ab9f3"
-ax.fill_between(
+ax_a.fill_between(
     [10e3, 60e3],
     [1e3, 1e3],
     [0, 0],
@@ -153,7 +196,7 @@ ax.fill_between(
     linewidth=0.0,
     facecolor=mask_color,
     zorder=3,
-    alpha=0.7,
+    alpha=0.2,
 )
 plt.axvline(x=60e3, linestyle="dashed")
 
@@ -163,10 +206,12 @@ font.set_family("sans-serif")
 font.set_weight("bold")
 
 # Simply reverses the order of the legend labels.
-handles, labels = ax.get_legend_handles_labels()
-ax.legend(handles[::-1], labels[::-1])
+handles, labels = ax_a.get_legend_handles_labels()
+ax_a.legend(handles[::-1], labels[::-1])
 
 plt.tight_layout()
+#fig_name_cos = 'diff_en/cos/cos_diag.png'
+#plt.savefig(fig_name_cos)
 plt.show()
 
 #eof

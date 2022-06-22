@@ -3,7 +3,6 @@ import math
 
 import autodiff as ad
 import det_sys_weights
-#import attenuation
 import pickle as pkl
 
 
@@ -24,8 +23,6 @@ class Weighter:
                      '_' + str(coupling) + '.pkl')
         base_path = ('c:/users/anton/desktop/máster/tfm/' + 
                      'hese-7-year-data-release-main/hese-7-year-data-release')
-        #base_path = ('/home/antonio/TFM/HESE-7-year-data-release/' + 
-        #             'HESE-7-year-data-release')
         full_filepath = base_path + file_name
         with open(full_filepath, 'rb') as f:
             arr = pkl._Unpickler(f)
@@ -40,20 +37,13 @@ class Weighter:
                 arr3 = arr[np.where(arr[:,1] <  math.pi/2)]
         
         self.attenuation = arr3[:,2:]
-        #self.attenuation = attenuation.Attenuation(self.mass_leptoquark, 
-        #                                           self.coupling)
-        #self.attenuation.set_interpolation()
 #####NEW ADDED    
 
     def flux_power_law(self, energy, zenith, norm, gamma, pivot): #ADDED ZENITH
-        #NEW ADDED
-        #attenuation = self.attenuation.get_attenuation(energy, zenith)
-        #NEW ADDED
         e_scale = energy / pivot
         spectrum = ad.pow_r(e_scale, ad.mul(gamma, -1.0))
         flux = ad.mul_grad(norm, spectrum)
         #NEW ADDED
-        #flux = ad.mul_r(flux, attenuation)
         flux_new = flux
         for i in range(0, len(self.attenuation)):
             flux_new[0][i] = flux[0][i] * self.attenuation[i][0]
